@@ -1,11 +1,24 @@
 import RunwayML from '@runwayml/sdk';
 
-if (!process.env.RUNWAYML_API_SECRET) {
-  // We'll allow it to be empty for now so the app doesn't crash on startup,
-  // but we should handle this in the UI.
-  console.warn("RUNWAYML_API_SECRET is not set");
+// Lazily initialize to avoid build-time errors when env vars are missing
+let runwayInstance: RunwayML | null = null;
+
+export function getRunwayClient() {
+  if (!runwayInstance) {
+    if (!process.env.RUNWAYML_API_SECRET) {
+      console.warn("RUNWAYML_API_SECRET is not set");
+    }
+    runwayInstance = new RunwayML({
+      apiKey: process.env.RUNWAYML_API_SECRET,
+    });
+  }
+  return runwayInstance;
 }
 
-export const runway = new RunwayML({
-  apiKey: process.env.RUNWAYML_API_SECRET,
+// Keep the old export for backward compatibility if possible, but it might still crash
+// Better to just change it to the getter.
+export const runway = new Proxy({} as RunwayML, {
+  get: (target, prop) => {
+    return (getRunwayClient() as any)[prop];
+  }
 });
