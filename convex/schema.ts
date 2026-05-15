@@ -39,4 +39,32 @@ export default defineSchema({
     mediaCount: v.optional(v.number()),
     connectedAt: v.string(),
   }).index("by_igUserId", ["igUserId"]),
+
+  // React Flow workflow nodes per project
+  workflow_nodes: defineTable({
+    projectId: v.string(),
+    nodeId: v.string(),
+    type: v.string(),
+    label: v.string(),
+    positionX: v.number(),
+    positionY: v.number(),
+    data: v.optional(v.string()), // JSON-stringified extra data
+    updatedAt: v.string(),
+  })
+    .index("by_projectId", ["projectId"])
+    .index("by_projectId_nodeId", ["projectId", "nodeId"]),
+
+  // React Flow workflow edges per project
+  workflow_edges: defineTable({
+    projectId: v.string(),
+    edgeId: v.string(),
+    source: v.string(),
+    target: v.string(),
+    sourceHandle: v.optional(v.string()),
+    targetHandle: v.optional(v.string()),
+    label: v.optional(v.string()),
+    updatedAt: v.string(),
+  })
+    .index("by_projectId", ["projectId"])
+    .index("by_projectId_edgeId", ["projectId", "edgeId"]),
 });
