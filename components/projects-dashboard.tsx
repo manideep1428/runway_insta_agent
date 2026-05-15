@@ -36,7 +36,7 @@ import {
 } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
 import {
-  Plus, Sparkles, Folder, ArrowRight, Loader2, Trash2,
+  Plus, Sparkles, Folder, ArrowRight, Loader2, Trash2, Edit2,
   Settings, Key, ShieldCheck, AlertCircle,
   ChevronDown, Check, Sun, Moon
 } from "lucide-react";
@@ -61,84 +61,30 @@ export function ProjectsDashboard() {
   const projects = useQuery(api.projects.listProjects) || [];
   const createProject = useMutation(api.projects.createProject);
   const deleteProject = useMutation(api.projects.deleteProject);
+  const renameProject = useMutation(api.projects.renameProject);
 
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [projectName, setProjectName] = useState("");
   const [isCreating, setIsCreating] = useState(false);
 
+  // Rename states
+  const [renameId, setRenameId] = useState<any>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [isRenaming, setIsRenaming] = useState(false);
+
+  // Delete states
+  const [deleteId, setDeleteId] = useState<any>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
   // API Key states
   const [apiKey, setApiKey] = useState<string | null>(null);
-  const [tempKey, setTempKey] = useState("");
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-
-  // Instagram states
-  const [igToken, setIgToken] = useState("");
-  const [isConnectingIg, setIsConnectingIg] = useState(false);
-  const [igError, setIgError] = useState<string | null>(null);
-  const [activeIgAccount, setActiveIgAccount] = useState<string | null>(null);
-  const [igPopoverOpen, setIgPopoverOpen] = useState(false);
-
-  const igAccounts = useQuery(api.instagram.listAccounts) || [];
-  const connectIgAccount = useAction(api.instagram.connectAccount);
-  const removeIgAccount = useMutation(api.instagram.removeAccount);
 
   useEffect(() => {
     const savedKey = localStorage.getItem("RUNWAYML_API_SECRET");
     if (savedKey) {
       setApiKey(savedKey);
-      setTempKey(savedKey);
     }
-    const savedIg = localStorage.getItem("ACTIVE_IG_ACCOUNT");
-    if (savedIg) setActiveIgAccount(savedIg);
   }, []);
-
-  const saveApiKey = () => {
-    if (tempKey.trim()) {
-      localStorage.setItem("RUNWAYML_API_SECRET", tempKey.trim());
-      setApiKey(tempKey.trim());
-      setIsSettingsOpen(false);
-    }
-  };
-
-  const handleConnectIg = async () => {
-    if (!igToken.trim()) return;
-    setIsConnectingIg(true);
-    setIgError(null);
-    try {
-      const result = await connectIgAccount({ accessToken: igToken.trim() });
-      localStorage.setItem(`IG_TOKEN_${result.igUserId}`, igToken.trim());
-      setActiveIgAccount(result.igUserId);
-      localStorage.setItem("ACTIVE_IG_ACCOUNT", result.igUserId);
-      setIgToken("");
-    } catch (err: any) {
-      setIgError(err.message || "Failed to connect Instagram account");
-    } finally {
-      setIsConnectingIg(false);
-    }
-  };
-
-  const handleDisconnectIg = async (igUserId: string) => {
-    await removeIgAccount({ igUserId });
-    localStorage.removeItem(`IG_TOKEN_${igUserId}`);
-    if (activeIgAccount === igUserId) {
-      const remaining = igAccounts.filter(a => a.igUserId !== igUserId);
-      if (remaining.length > 0) {
-        setActiveIgAccount(remaining[0].igUserId);
-        localStorage.setItem("ACTIVE_IG_ACCOUNT", remaining[0].igUserId);
-      } else {
-        setActiveIgAccount(null);
-        localStorage.removeItem("ACTIVE_IG_ACCOUNT");
-      }
-    }
-  };
-
-  const handleSelectIgAccount = (igUserId: string) => {
-    setActiveIgAccount(igUserId);
-    localStorage.setItem("ACTIVE_IG_ACCOUNT", igUserId);
-    setIgPopoverOpen(false);
-  };
-
-  const activeIg = igAccounts.find(a => a.igUserId === activeIgAccount);
 
   const handleCreateProject = async () => {
     if (!projectName.trim()) return;
@@ -147,7 +93,7 @@ export function ProjectsDashboard() {
       const projectId = await createProject({ name: projectName });
       setIsDialogOpen(false);
       setProjectName("");
-      router.push(`/dashboard?project=${projectId}`);
+      router.push(`/chat?project=${projectId}`);
     } catch (error) {
       console.error("Failed to create project:", error);
     } finally {
@@ -155,7 +101,35 @@ export function ProjectsDashboard() {
     }
   };
 
+  const handleRename = async () => {
+    if (!renameValue.trim() || !renameId) return;
+    setIsRenaming(true);
+    try {
+      await renameProject({ id: renameId, name: renameValue });
+      setRenameId(null);
+      setRenameValue("");
+    } catch (error) {
+      console.error("Failed to rename project:", error);
+    } finally {
+      setIsRenaming(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deleteId) return;
+    setIsDeleting(true);
+    try {
+      await deleteProject({ id: deleteId });
+      setDeleteId(null);
+    } catch (error) {
+      console.error("Failed to delete project:", error);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   return (
+    <>
     <SidebarProvider defaultOpen={true}>
       <div className="min-h-screen bg-background text-foreground selection:bg-purple-500/30 font-sans flex w-full">
         {/* Background Decor */}
@@ -168,13 +142,13 @@ export function ProjectsDashboard() {
           <SidebarHeader>
             <SidebarMenu>
               <SidebarMenuItem>
-                <SidebarMenuButton size="lg" className="hover:bg-accent data-[state=open]:bg-accent">
-                  <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-gradient-to-br from-purple-600 to-blue-600 text-white shadow-lg shadow-purple-500/20">
-                    <Sparkles className="size-4" />
+                <SidebarMenuButton size="lg" className="hover:bg-accent data-[state=open]:bg-accent group-data-[state=collapsed]:justify-center transition-all">
+                  <div className="flex aspect-square size-10 group-data-[state=collapsed]:size-8 items-center justify-center rounded-lg bg-gradient-to-br from-purple-600 to-blue-600 text-white shadow-lg shadow-purple-500/20 shrink-0">
+                    <Sparkles className="size-5 group-data-[state=collapsed]:size-4" />
                   </div>
-                  <div className="flex flex-col gap-0.5 leading-none">
-                    <span className="font-semibold text-sidebar-foreground">Studio</span>
-                    <span className="text-xs text-muted-foreground">Generative AI</span>
+                  <div className="flex flex-col gap-1 leading-none ml-1 group-data-[state=collapsed]:hidden">
+                    <span className="text-lg font-bold text-sidebar-foreground">Studio</span>
+                    <span className="text-sm font-medium text-muted-foreground">Generative AI</span>
                   </div>
                 </SidebarMenuButton>
               </SidebarMenuItem>
@@ -185,11 +159,15 @@ export function ProjectsDashboard() {
               <SidebarGroupContent>
                 <SidebarMenu>
                   <SidebarMenuItem>
-                    <SidebarMenuButton tooltip="Your Projects" isActive className="hover:bg-accent hover:text-accent-foreground text-foreground/70">
-                      <Link href="/projects">
-                        <Folder className="text-purple-500" />
-                        <span>Your Projects</span>
-                      </Link>
+                    <SidebarMenuButton
+                      size="lg"
+                      tooltip="Your Projects"
+                      isActive
+                      render={<Link href="/projects" />}
+                      className="hover:bg-accent hover:text-accent-foreground text-foreground/70 group-data-[state=collapsed]:justify-center transition-all"
+                    >
+                      <Folder className="w-5 h-5 text-purple-500 shrink-0" />
+                      <span className="text-base font-medium ml-1 group-data-[state=collapsed]:hidden">Your Projects</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 </SidebarMenu>
@@ -199,181 +177,28 @@ export function ProjectsDashboard() {
           <SidebarFooter>
             <SidebarMenu>
               <SidebarMenuItem>
-                <Popover open={igPopoverOpen} onOpenChange={setIgPopoverOpen}>
-                  <PopoverTrigger >
-                    <SidebarMenuButton tooltip="Instagram Connect" className="hover:bg-accent hover:text-accent-foreground text-foreground/70">
-                      <Instagram className="text-pink-500" />
-                      <span>{activeIg ? `@${activeIg.username}` : "Connect IG"}</span>
-                      <ChevronDown className="ml-auto opacity-50" />
-                    </SidebarMenuButton>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-64 bg-card border-border text-card-foreground p-0 shadow-2xl" side="right" align="end">
-                    <div className="p-3 border-b border-border">
-                      <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Accounts</p>
-                    </div>
-                    {igAccounts.length === 0 ? (
-                      <div className="p-6 text-center text-muted-foreground text-sm">
-                        <Instagram className="w-8 h-8 mx-auto mb-2 opacity-30" />
-                        <p>No accounts connected</p>
-                      </div>
-                    ) : (
-                      <div className="max-h-60 overflow-y-auto">
-                        {igAccounts.map((acc) => (
-                          <div
-                            key={acc.igUserId}
-                            className={cn(
-                              "flex items-center gap-3 px-3 py-2.5 cursor-pointer transition-all hover:bg-accent group",
-                              activeIgAccount === acc.igUserId && "bg-pink-500/10"
-                            )}
-                            onClick={() => handleSelectIgAccount(acc.igUserId)}
-                          >
-                            <div className="relative">
-                              {acc.profilePicture ? (
-                                <img src={acc.profilePicture} alt="" className="w-8 h-8 rounded-full object-cover border-2 border-transparent group-hover:border-pink-500/30 transition-all" />
-                              ) : (
-                                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center text-white text-xs font-bold">
-                                  {acc.username[0]?.toUpperCase()}
-                                </div>
-                              )}
-                              {activeIgAccount === acc.igUserId && (
-                                <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-green-500 rounded-full border-2 border-background flex items-center justify-center">
-                                  <Check className="w-2 h-2 text-white" />
-                                </div>
-                              )}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-semibold truncate">@{acc.username}</p>
-                            </div>
-                            <button
-                              onClick={(e) => { e.stopPropagation(); handleDisconnectIg(acc.igUserId); }}
-                              className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-all"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    <div className="p-3 border-t border-border">
-                      <Button
-                        variant="ghost"
-                        className="w-full h-9 text-sm text-pink-500 hover:text-pink-600 hover:bg-pink-500/10"
-                        onClick={() => { setIgPopoverOpen(false); setIsSettingsOpen(true); }}
-                      >
-                        <Plus className="w-4 h-4 mr-2" />
-                        Add Account
-                      </Button>
-                    </div>
-                  </PopoverContent>
-                </Popover>
-              </SidebarMenuItem>
-
-              <SidebarMenuItem>
                 <SidebarMenuButton
+                  size="lg"
                   tooltip={theme === "dark" ? "Light Mode" : "Dark Mode"}
-                  className="hover:bg-accent hover:text-accent-foreground text-foreground/70"
+                  className="hover:bg-accent hover:text-accent-foreground text-foreground/70 group-data-[state=collapsed]:justify-center transition-all"
                   onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
                 >
-                  {theme === "dark" ? <Sun className="text-yellow-500" /> : <Moon className="text-blue-500" />}
-                  <span>{theme === "dark" ? "Light Mode" : "Dark Mode"}</span>
+                  {theme === "dark" ? <Sun className="w-5 h-5 text-yellow-500 shrink-0" /> : <Moon className="w-5 h-5 text-blue-500 shrink-0" />}
+                  <span className="text-base font-medium ml-1 group-data-[state=collapsed]:hidden">{theme === "dark" ? "Light Mode" : "Dark Mode"}</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
 
               <SidebarMenuItem>
-                <Dialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
-                  <DialogTrigger >
-                    <SidebarMenuButton tooltip="Settings" className="hover:bg-accent hover:text-accent-foreground text-foreground/70 relative">
-                      <Settings className="text-purple-500" />
-                      <span>Settings</span>
-                      {!apiKey && <span className="absolute right-2 w-2 h-2 bg-destructive rounded-full animate-pulse" />}
-                    </SidebarMenuButton>
-                  </DialogTrigger>
-                  <DialogContent className="bg-card border-border text-card-foreground shadow-2xl backdrop-blur-xl max-w-lg max-h-[90vh] overflow-y-auto z-50">
-                    <DialogHeader>
-                      <DialogTitle className="flex items-center gap-2 text-xl font-bold">
-                        <Key className="w-5 h-5 text-purple-500" />
-                        API Configuration
-                      </DialogTitle>
-                      <DialogDescription className="text-muted-foreground pt-2">
-                        Connect your APIs to unlock all features. Keys are stored locally in your browser.
-                      </DialogDescription>
-                    </DialogHeader>
-                    <div className="py-4 space-y-6">
-                      {/* RunwayML Section */}
-                      <div className="space-y-3">
-                        <div className="flex items-center gap-2">
-                          <div className="w-6 h-6 bg-purple-500/10 rounded-md flex items-center justify-center">
-                            <Sparkles className="w-3.5 h-3.5 text-purple-500" />
-                          </div>
-                          <h3 className="text-sm font-bold uppercase tracking-wider">RunwayML</h3>
-                          {apiKey && <span className="ml-auto text-[10px] text-green-500 font-bold uppercase tracking-widest">Connected</span>}
-                        </div>
-                        <div className="relative">
-                          <Input
-                            type="password"
-                            placeholder="sk_..."
-                            className="bg-muted border-border h-11 pr-10 focus:border-purple-500/50 transition-all rounded-xl text-foreground"
-                            value={tempKey}
-                            onChange={(e) => setTempKey(e.target.value)}
-                          />
-                          <ShieldCheck className={cn(
-                            "absolute right-3 top-3 w-5 h-5 transition-colors",
-                            tempKey ? "text-green-500" : "text-muted-foreground"
-                          )} />
-                        </div>
-                        <Button
-                          onClick={saveApiKey}
-                          disabled={!tempKey.trim()}
-                          className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 text-white h-10 rounded-xl font-bold shadow-lg shadow-purple-500/20 disabled:opacity-40"
-                        >
-                          Save Runway Key
-                        </Button>
-                      </div>
-
-                      <div className="border-t border-border" />
-
-                      {/* Instagram Section */}
-                      <div className="space-y-3">
-                        <div className="flex items-center gap-2">
-                          <div className="w-6 h-6 bg-gradient-to-br from-pink-500 to-purple-600 rounded-md flex items-center justify-center">
-                            <Instagram className="w-3.5 h-3.5 text-white" />
-                          </div>
-                          <h3 className="text-sm font-bold uppercase tracking-wider">Instagram</h3>
-                        </div>
-
-                        <div className="relative">
-                          <Input
-                            type="password"
-                            placeholder="Instagram Access Token..."
-                            className="bg-muted border-border h-11 pr-10 focus:border-pink-500/50 transition-all rounded-xl text-foreground"
-                            value={igToken}
-                            onChange={(e) => { setIgToken(e.target.value); setIgError(null); }}
-                          />
-                          <Instagram className={cn(
-                            "absolute right-3 top-3 w-5 h-5 transition-colors",
-                            igToken ? "text-pink-500" : "text-muted-foreground"
-                          )} />
-                        </div>
-
-                        {igError && (
-                          <div className="p-3 rounded-xl bg-destructive/10 border border-destructive/20 flex gap-2 items-start">
-                            <AlertCircle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
-                            <p className="text-[11px] text-destructive leading-relaxed">{igError}</p>
-                          </div>
-                        )}
-
-                        <Button
-                          onClick={handleConnectIg}
-                          disabled={!igToken.trim() || isConnectingIg}
-                          className="w-full bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-500 hover:to-purple-500 text-white h-10 rounded-xl font-bold shadow-lg shadow-pink-500/20 disabled:opacity-40"
-                        >
-                          {isConnectingIg ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Instagram className="w-4 h-4 mr-2" />}
-                          Connect Account
-                        </Button>
-                      </div>
-                    </div>
-                  </DialogContent>
-                </Dialog>
+                <SidebarMenuButton
+                  size="lg"
+                  tooltip="Settings"
+                  render={<Link href="/settings" />}
+                  className="hover:bg-accent hover:text-accent-foreground text-foreground/70 relative group-data-[state=collapsed]:justify-center transition-all"
+                >
+                  <Settings className="w-5 h-5 text-purple-500 shrink-0" />
+                  <span className="text-base font-medium ml-1 group-data-[state=collapsed]:hidden">Settings</span>
+                  {!apiKey && <span className="absolute right-2 w-2 h-2 bg-destructive rounded-full animate-pulse group-data-[state=collapsed]:top-1 group-data-[state=collapsed]:right-1" />}
+                </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>
           </SidebarFooter>
@@ -387,12 +212,12 @@ export function ProjectsDashboard() {
 
             <div className="ml-auto">
               <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-                <DialogTrigger >
+                <DialogTrigger render={
                   <Button className="bg-primary text-primary-foreground hover:bg-primary/90 font-semibold rounded-xl h-9 px-4 shadow-sm">
                     <Plus className="w-4 h-4 mr-2" />
                     Create New Project
                   </Button>
-                </DialogTrigger>
+                } />
                 <DialogContent className="bg-card border-border text-card-foreground shadow-2xl backdrop-blur-xl">
                   <DialogHeader>
                     <DialogTitle className="text-xl font-bold flex items-center gap-2">
@@ -452,34 +277,48 @@ export function ProjectsDashboard() {
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {projects.map((project) => (
-                    <Card key={project._id} className="bg-card border-border hover:border-border/80 transition-all group overflow-hidden flex flex-col relative shadow-sm hover:shadow-md">
-                      <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-purple-600 to-blue-600 opacity-0 group-hover:opacity-100 transition-opacity" />
+                    <Card key={project._id} className="bg-card border-border hover:border-border/80 transition-all group overflow-hidden flex flex-col relative shadow-sm hover:shadow-lg hover:-translate-y-1 duration-300">
+                      <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-purple-600 via-blue-600 to-purple-600 opacity-0 group-hover:opacity-100 transition-opacity" />
 
                       <CardContent className="p-6 flex-1 flex flex-col">
                         <div className="flex items-start justify-between mb-4">
                           <div className="w-10 h-10 rounded-xl bg-accent flex items-center justify-center border border-border">
                             <Folder className="w-5 h-5 text-purple-500" />
                           </div>
-                          <button
-                            onClick={(e) => {
-                              e.preventDefault();
-                              deleteProject({ id: project._id });
-                            }}
-                            className="opacity-0 group-hover:opacity-100 p-2 hover:bg-destructive/10 text-muted-foreground hover:text-destructive rounded-lg transition-all"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button
+                              onClick={(e) => {
+                                e.preventDefault();
+                                setRenameId(project._id);
+                                setRenameValue(project.name);
+                              }}
+                              className="p-2 hover:bg-purple-500/10 text-muted-foreground hover:text-purple-500 rounded-lg transition-all"
+                              title="Rename Project"
+                            >
+                              <Edit2 className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.preventDefault();
+                                setDeleteId(project._id);
+                              }}
+                              className="p-2 hover:bg-destructive/10 text-muted-foreground hover:text-destructive rounded-lg transition-all"
+                              title="Delete Project"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
                         </div>
 
-                        <h3 className="text-xl font-bold mb-2 group-hover:text-purple-500 transition-colors">{project.name}</h3>
-                        <p className="text-sm text-muted-foreground mb-6 flex-1">
+                        <h3 className="text-xl font-bold mb-1 group-hover:text-purple-500 transition-colors line-clamp-1">{project.name}</h3>
+                        <p className="text-xs text-muted-foreground mb-6 flex-1">
                           Created {new Date(project.createdAt).toLocaleDateString()}
                         </p>
 
-                        <Link href={`/dashboard?project=${project._id}`}>
-                          <Button variant="ghost" className="w-full justify-between hover:bg-accent text-foreground/70 hover:text-foreground px-0">
-                            Open Project
-                            <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                        <Link href={`/chat?project=${project._id}`} className="w-full">
+                          <Button className="w-full bg-secondary hover:bg-purple-600 hover:text-white border border-border group/btn transition-all rounded-xl h-10 flex items-center justify-between px-4">
+                            <span className="font-semibold">Open Workspace</span>
+                            <ArrowRight className="w-4 h-4 group-hover/btn:translate-x-1 transition-transform" />
                           </Button>
                         </Link>
                       </CardContent>
@@ -492,5 +331,68 @@ export function ProjectsDashboard() {
         </SidebarInset>
       </div>
     </SidebarProvider>
+    
+    {/* Rename Dialog */}
+    <Dialog open={!!renameId} onOpenChange={(open) => !open && setRenameId(null)}>
+      <DialogContent className="bg-card border-border text-card-foreground shadow-2xl backdrop-blur-xl">
+        <DialogHeader>
+          <DialogTitle className="text-xl font-bold flex items-center gap-2">
+            <Edit2 className="w-5 h-5 text-purple-500" />
+            Rename Project
+          </DialogTitle>
+          <DialogDescription className="text-muted-foreground">
+            Enter a new name for your project.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="py-4 space-y-4">
+          <Input
+            placeholder="New project name"
+            className="bg-muted border-border h-12 focus:border-purple-500/50 transition-all rounded-xl text-foreground"
+            value={renameValue}
+            onChange={(e) => setRenameValue(e.target.value)}
+            autoFocus
+            onKeyDown={(e) => {
+              if (e.key === "Enter") handleRename();
+            }}
+          />
+          <div className="flex gap-3">
+            <Button variant="outline" onClick={() => setRenameId(null)} className="flex-1 rounded-xl">Cancel</Button>
+            <Button
+              onClick={handleRename}
+              disabled={!renameValue.trim() || isRenaming}
+              className="flex-1 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-xl font-bold"
+            >
+              {isRenaming ? <Loader2 className="w-5 h-5 animate-spin" /> : "Save Changes"}
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+
+    {/* Delete Confirmation Dialog */}
+    <Dialog open={!!deleteId} onOpenChange={(open) => !open && setDeleteId(null)}>
+      <DialogContent className="bg-card border-border text-card-foreground shadow-2xl backdrop-blur-xl">
+        <DialogHeader>
+          <DialogTitle className="text-xl font-bold flex items-center gap-2">
+            <Trash2 className="w-5 h-5 text-destructive" />
+            Delete Project
+          </DialogTitle>
+          <DialogDescription className="text-muted-foreground">
+            Are you sure you want to delete this project? This action cannot be undone.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="py-4 flex gap-3">
+          <Button variant="outline" onClick={() => setDeleteId(null)} className="flex-1 rounded-xl">Cancel</Button>
+          <Button
+            onClick={handleDelete}
+            disabled={isDeleting}
+            className="flex-1 bg-destructive hover:bg-destructive/90 text-white rounded-xl font-bold"
+          >
+            {isDeleting ? <Loader2 className="w-5 h-5 animate-spin" /> : "Delete Project"}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }

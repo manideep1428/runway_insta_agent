@@ -5,8 +5,10 @@ import { useAction, useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { MediaUploadInput } from "@/components/media-upload-input";
 import { Textarea } from "@/components/ui/textarea";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -101,15 +103,21 @@ const LANGUAGES = [
   { code: "sv", name: "Swedish" }, { code: "da", name: "Danish" }, { code: "fi", name: "Finnish" },
 ];
 
+const VIDEO_MODELS = ["gen4.5", "gen4_turbo", "veo3", "veo3.1", "veo3.1_fast"];
+const IMAGE_MODELS = ["gen4_image", "gen4_image_turbo", "gemini_image3_pro", "gpt_image_2", "gemini_2.5_flash"];
+
 export function RunwayDashboard() {
+  const router = useRouter();
   const [prompt, setPrompt] = useState("");
   const [imageUrl, setImageUrl] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
 
   // API Key states
   const [apiKey, setApiKey] = useState<string | null>(null);
-  const [tempKey, setTempKey] = useState("");
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
+  // Active IG Account (selected from connected ones)
+  const [activeIgAccount, setActiveIgAccount] = useState<string | null>(null);
+  const [igPopoverOpen, setIgPopoverOpen] = useState(false);
 
   // Avatar states
   const [avatarName, setAvatarName] = useState("");
@@ -117,13 +125,6 @@ export function RunwayDashboard() {
   const [avatarPersonality, setAvatarPersonality] = useState("");
   const [avatarVoice, setAvatarVoice] = useState("victoria");
   const [isCreatingAvatar, setIsCreatingAvatar] = useState(false);
-
-  // Instagram states
-  const [igToken, setIgToken] = useState("");
-  const [isConnectingIg, setIsConnectingIg] = useState(false);
-  const [igError, setIgError] = useState<string | null>(null);
-  const [activeIgAccount, setActiveIgAccount] = useState<string | null>(null);
-  const [igPopoverOpen, setIgPopoverOpen] = useState(false);
 
   // New generation form states
   const [videoUri, setVideoUri] = useState("");
@@ -134,6 +135,10 @@ export function RunwayDashboard() {
   const [sfxLoop, setSfxLoop] = useState(false);
   const [ttsVoice, setTtsVoice] = useState("Maya");
   const [genLoading, setGenLoading] = useState<string | null>(null);
+
+  const [t2vModel, setT2vModel] = useState("gen4.5");
+  const [i2vModel, setI2vModel] = useState("gen4.5");
+  const [t2iModel, setT2iModel] = useState("gen4_image");
 
   const tasks = useQuery(api.runway.listTasks) || [];
   const avatars = useQuery(api.runway.listAvatars) || [];
@@ -156,8 +161,6 @@ export function RunwayDashboard() {
 
   // Instagram
   const igAccounts = useQuery(api.instagram.listAccounts) || [];
-  const connectIgAccount = useAction(api.instagram.connectAccount);
-  const removeIgAccount = useMutation(api.instagram.removeAccount);
 
   // Poll for pending tasks
   useEffect(() => {
@@ -177,55 +180,11 @@ export function RunwayDashboard() {
     const savedKey = localStorage.getItem("RUNWAYML_API_SECRET");
     if (savedKey) {
       setApiKey(savedKey);
-      setTempKey(savedKey);
-    } else {
-      setIsSettingsOpen(true);
     }
     // Load active IG account
     const savedIg = localStorage.getItem("ACTIVE_IG_ACCOUNT");
     if (savedIg) setActiveIgAccount(savedIg);
   }, []);
-
-  const saveApiKey = () => {
-    if (tempKey.trim()) {
-      localStorage.setItem("RUNWAYML_API_SECRET", tempKey.trim());
-      setApiKey(tempKey.trim());
-      setIsSettingsOpen(false);
-    }
-  };
-
-  const handleConnectIg = async () => {
-    if (!igToken.trim()) return;
-    setIsConnectingIg(true);
-    setIgError(null);
-    try {
-      const result = await connectIgAccount({ accessToken: igToken.trim() });
-      // Store token locally per account
-      localStorage.setItem(`IG_TOKEN_${result.igUserId}`, igToken.trim());
-      setActiveIgAccount(result.igUserId);
-      localStorage.setItem("ACTIVE_IG_ACCOUNT", result.igUserId);
-      setIgToken("");
-    } catch (err: any) {
-      setIgError(err.message || "Failed to connect Instagram account");
-    } finally {
-      setIsConnectingIg(false);
-    }
-  };
-
-  const handleDisconnectIg = async (igUserId: string) => {
-    await removeIgAccount({ igUserId });
-    localStorage.removeItem(`IG_TOKEN_${igUserId}`);
-    if (activeIgAccount === igUserId) {
-      const remaining = igAccounts.filter(a => a.igUserId !== igUserId);
-      if (remaining.length > 0) {
-        setActiveIgAccount(remaining[0].igUserId);
-        localStorage.setItem("ACTIVE_IG_ACCOUNT", remaining[0].igUserId);
-      } else {
-        setActiveIgAccount(null);
-        localStorage.removeItem("ACTIVE_IG_ACCOUNT");
-      }
-    }
-  };
 
   const handleSelectIgAccount = (igUserId: string) => {
     setActiveIgAccount(igUserId);
@@ -286,21 +245,21 @@ export function RunwayDashboard() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] text-white selection:bg-purple-500/30 font-sans">
+    <div className="min-h-screen bg-background text-foreground selection:bg-purple-500/30 font-sans">
       {/* Background Decor */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-purple-900/20 blur-[120px] rounded-full" />
         <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-blue-900/20 blur-[120px] rounded-full" />
       </div>
 
-      <header className="relative z-10 border-b border-white/5 bg-black/50 backdrop-blur-md sticky top-0">
+      <header className="relative z-10 border-b border-border bg-background/50 backdrop-blur-md sticky top-0">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Link href="/projects" className="mr-2 w-8 h-8 rounded-full bg-white/5 border border-white/10 flex items-center justify-center hover:bg-white/10 transition-colors">
-              <ArrowRight className="w-4 h-4 text-white/60 rotate-180" />
+            <Link href="/projects" className="mr-2 w-8 h-8 rounded-full bg-secondary border border-border flex items-center justify-center hover:bg-secondary transition-colors">
+              <ArrowRight className="w-4 h-4 text-muted-foreground rotate-180" />
             </Link>
             <div className="w-8 h-8 bg-gradient-to-br from-purple-600 to-blue-600 rounded-lg flex items-center justify-center shadow-lg shadow-purple-500/20">
-              <Sparkles className="w-5 h-5 text-white" />
+              <Sparkles className="w-5 h-5 text-foreground" />
             </div>
             <span className="font-bold text-xl tracking-tight bg-gradient-to-r from-white to-white/60 bg-clip-text text-transparent">
               Runway Studio
@@ -308,255 +267,37 @@ export function RunwayDashboard() {
           </div>
 
           <div className="flex items-center gap-3">
-            {/* Instagram Account Switcher */}
-            <Popover open={igPopoverOpen} onOpenChange={setIgPopoverOpen}>
-              <PopoverTrigger>
-                <button className={cn(
-                  "flex items-center gap-2 px-3 h-9 rounded-xl border transition-all text-sm font-medium",
-                  igAccounts.length > 0
-                    ? "border-pink-500/30 bg-pink-500/5 hover:bg-pink-500/10 text-white"
-                    : "border-white/10 bg-white/5 hover:bg-white/10 text-white/60"
-                )}>
-                  <Instagram className="w-4 h-4 text-pink-500" />
-                  {activeIg ? (
-                    <span className="flex items-center gap-1.5">
-                      {activeIg.profilePicture ? (
-                        <img src={activeIg.profilePicture} alt="" className="w-5 h-5 rounded-full object-cover" />
-                      ) : null}
-                      <span className="max-w-[100px] truncate">@{activeIg.username}</span>
-                    </span>
-                  ) : (
-                    <span>Connect IG</span>
-                  )}
-                  <ChevronDown className="w-3 h-3 opacity-50" />
-                </button>
-              </PopoverTrigger>
-              <PopoverContent className="w-80 bg-[#111] border-white/10 text-white p-0 shadow-2xl" align="end">
-                <div className="p-3 border-b border-white/5">
-                  <p className="text-xs font-bold uppercase tracking-widest text-white/40">Connected Accounts</p>
-                </div>
-                {igAccounts.length === 0 ? (
-                  <div className="p-6 text-center text-white/30 text-sm">
-                    <Instagram className="w-8 h-8 mx-auto mb-2 opacity-30" />
-                    <p>No accounts connected</p>
-                  </div>
-                ) : (
-                  <div className="max-h-60 overflow-y-auto">
-                    {igAccounts.map((acc) => (
-                      <div
-                        key={acc.igUserId}
-                        className={cn(
-                          "flex items-center gap-3 px-3 py-2.5 cursor-pointer transition-all hover:bg-white/5 group",
-                          activeIgAccount === acc.igUserId && "bg-pink-500/5"
-                        )}
-                        onClick={() => handleSelectIgAccount(acc.igUserId)}
-                      >
-                        <div className="relative">
-                          {acc.profilePicture ? (
-                            <img src={acc.profilePicture} alt="" className="w-9 h-9 rounded-full object-cover border-2 border-transparent group-hover:border-pink-500/30 transition-all" />
-                          ) : (
-                            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center text-xs font-bold">
-                              {acc.username[0]?.toUpperCase()}
-                            </div>
-                          )}
-                          {activeIgAccount === acc.igUserId && (
-                            <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-green-500 rounded-full border-2 border-[#111] flex items-center justify-center">
-                              <Check className="w-2.5 h-2.5 text-white" />
-                            </div>
-                          )}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold truncate">@{acc.username}</p>
-                          <p className="text-[10px] text-white/40 uppercase tracking-wider">
-                            {acc.followersCount != null ? `${acc.followersCount.toLocaleString()} followers` : "Connected"}
-                            {acc.mediaCount != null ? ` · ${acc.mediaCount} posts` : ""}
-                          </p>
-                        </div>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); handleDisconnectIg(acc.igUserId); }}
-                          className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg hover:bg-red-500/10 text-white/30 hover:text-red-400 transition-all"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                <div className="p-3 border-t border-white/5">
-                  <Button
-                    variant="ghost"
-                    className="w-full h-9 text-sm text-pink-400 hover:text-pink-300 hover:bg-pink-500/10"
-                    onClick={() => { setIgPopoverOpen(false); setIsSettingsOpen(true); }}
-                  >
-                    <Plus className="w-4 h-4 mr-2" />
-                    Add Account
-                  </Button>
-                </div>
-              </PopoverContent>
-            </Popover>
-
             {/* Settings */}
-            <Dialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
-              <DialogTrigger>
-                <Button variant="ghost" size="icon" className="text-white/60 hover:text-white hover:bg-white/5 relative">
-                  <Settings className="w-5 h-5" />
-                  {!apiKey && (
-                    <span className="absolute top-0 right-0 w-2 h-2 bg-red-500 rounded-full animate-pulse" />
-                  )}
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="bg-[#111] border-white/10 text-white shadow-2xl backdrop-blur-xl max-w-lg max-h-[90vh] overflow-y-auto">
-                <DialogHeader>
-                  <DialogTitle className="flex items-center gap-2 text-xl font-bold">
-                    <Key className="w-5 h-5 text-purple-500" />
-                    API Configuration
-                  </DialogTitle>
-                  <DialogDescription className="text-white/40 pt-2">
-                    Connect your APIs to unlock all features. Keys are stored locally in your browser.
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="py-4 space-y-6">
-                  {/* RunwayML Section */}
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-2">
-                      <div className="w-6 h-6 bg-purple-500/10 rounded-md flex items-center justify-center">
-                        <Sparkles className="w-3.5 h-3.5 text-purple-500" />
-                      </div>
-                      <h3 className="text-sm font-bold uppercase tracking-wider">RunwayML</h3>
-                      {apiKey && <span className="ml-auto text-[10px] text-green-500 font-bold uppercase tracking-widest">Connected</span>}
-                    </div>
-                    <div className="relative">
-                      <Input
-                        type="password"
-                        placeholder="sk_..."
-                        className="bg-black/40 border-white/10 h-11 pr-10 focus:border-purple-500/50 transition-all rounded-xl"
-                        value={tempKey}
-                        onChange={(e) => setTempKey(e.target.value)}
-                      />
-                      <ShieldCheck className={cn(
-                        "absolute right-3 top-3 w-5 h-5 transition-colors",
-                        tempKey ? "text-green-500" : "text-white/20"
-                      )} />
-                    </div>
-                    <div className="p-3 rounded-xl bg-purple-500/5 border border-purple-500/10 flex gap-2 items-start">
-                      <AlertCircle className="w-4 h-4 text-purple-500 shrink-0 mt-0.5" />
-                      <p className="text-[11px] text-white/50 leading-relaxed">
-                        Get your key from the <a href="https://dev.runwayml.com/" target="_blank" className="text-purple-400 hover:underline">Runway Developer Portal</a>.
-                      </p>
-                    </div>
-                    <Button
-                      onClick={saveApiKey}
-                      disabled={!tempKey.trim()}
-                      className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 text-white h-10 rounded-xl font-bold shadow-lg shadow-purple-500/20 disabled:opacity-40"
-                    >
-                      Save Runway Key
-                    </Button>
-                  </div>
+            <Link href="/settings">
+              <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground hover:bg-secondary relative">
+                <Settings className="w-5 h-5" />
+                {!apiKey && (
+                  <span className="absolute top-0 right-0 w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+                )}
+              </Button>
+            </Link>
 
-                  <div className="border-t border-white/5" />
-
-                  {/* Instagram Section */}
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-2">
-                      <div className="w-6 h-6 bg-gradient-to-br from-pink-500 to-purple-600 rounded-md flex items-center justify-center">
-                        <Instagram className="w-3.5 h-3.5 text-white" />
-                      </div>
-                      <h3 className="text-sm font-bold uppercase tracking-wider">Instagram</h3>
-                      {igAccounts.length > 0 && (
-                        <span className="ml-auto text-[10px] text-green-500 font-bold uppercase tracking-widest">
-                          {igAccounts.length} Account{igAccounts.length > 1 ? "s" : ""}
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Connected accounts */}
-                    {igAccounts.length > 0 && (
-                      <div className="space-y-1.5">
-                        {igAccounts.map((acc) => (
-                          <div key={acc.igUserId} className="flex items-center gap-2.5 p-2 rounded-xl bg-white/[0.02] border border-white/5">
-                            {acc.profilePicture ? (
-                              <img src={acc.profilePicture} alt="" className="w-8 h-8 rounded-full object-cover" />
-                            ) : (
-                              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center text-xs font-bold">
-                                {acc.username[0]?.toUpperCase()}
-                              </div>
-                            )}
-                            <div className="flex-1 min-w-0">
-                              <p className="text-xs font-semibold truncate">@{acc.username}</p>
-                              <p className="text-[10px] text-white/30">{acc.followersCount?.toLocaleString() || 0} followers</p>
-                            </div>
-                            <button
-                              onClick={() => handleDisconnectIg(acc.igUserId)}
-                              className="p-1.5 rounded-lg hover:bg-red-500/10 text-white/30 hover:text-red-400 transition-all"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    <div className="relative">
-                      <Input
-                        type="password"
-                        placeholder="Instagram Access Token..."
-                        className="bg-black/40 border-white/10 h-11 pr-10 focus:border-pink-500/50 transition-all rounded-xl"
-                        value={igToken}
-                        onChange={(e) => { setIgToken(e.target.value); setIgError(null); }}
-                      />
-                      <Instagram className={cn(
-                        "absolute right-3 top-3 w-5 h-5 transition-colors",
-                        igToken ? "text-pink-500" : "text-white/20"
-                      )} />
-                    </div>
-
-                    {igError && (
-                      <div className="p-3 rounded-xl bg-red-500/5 border border-red-500/10 flex gap-2 items-start">
-                        <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
-                        <p className="text-[11px] text-red-400 leading-relaxed">{igError}</p>
-                      </div>
-                    )}
-
-                    <div className="p-3 rounded-xl bg-pink-500/5 border border-pink-500/10 flex gap-2 items-start">
-                      <AlertCircle className="w-4 h-4 text-pink-500 shrink-0 mt-0.5" />
-                      <p className="text-[11px] text-white/50 leading-relaxed">
-                        Use a long-lived Instagram Graph API token. Get it from the <a href="https://developers.facebook.com/tools/explorer/" target="_blank" className="text-pink-400 hover:underline inline-flex items-center gap-1">Meta Graph Explorer <ExternalLink className="w-3 h-3 inline" /></a>.
-                      </p>
-                    </div>
-
-                    <Button
-                      onClick={handleConnectIg}
-                      disabled={!igToken.trim() || isConnectingIg}
-                      className="w-full bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-500 hover:to-purple-500 text-white h-10 rounded-xl font-bold shadow-lg shadow-pink-500/20 disabled:opacity-40"
-                    >
-                      {isConnectingIg ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Instagram className="w-4 h-4 mr-2" />}
-                      Connect Account
-                    </Button>
-                  </div>
-                </div>
-              </DialogContent>
-            </Dialog>
-
-            <div className="w-8 h-8 rounded-full bg-white/10 border border-white/10 flex items-center justify-center">
-              <UserCircle className="w-5 h-5 text-white/60" />
+            <div className="w-8 h-8 rounded-full bg-secondary border border-border flex items-center justify-center">
+              <UserCircle className="w-5 h-5 text-muted-foreground" />
             </div>
           </div>
+
         </div>
       </header>
 
       {!apiKey && (
         <div className="relative z-20 max-w-7xl mx-auto px-6 py-20">
-          <div className="flex flex-col items-center justify-center py-20 px-6 border border-white/5 bg-white/[0.02] backdrop-blur-sm rounded-[3rem] text-center max-w-2xl mx-auto">
+          <div className="flex flex-col items-center justify-center py-20 px-6 border border-border bg-card backdrop-blur-sm rounded-[3rem] text-center max-w-2xl mx-auto">
             <div className="w-20 h-20 bg-purple-500/10 rounded-full flex items-center justify-center mb-6">
               <Key className="w-10 h-10 text-purple-500" />
             </div>
             <h2 className="text-3xl font-bold mb-4 tracking-tight">Setup Required</h2>
-            <p className="text-white/40 mb-8 max-w-md">
+            <p className="text-muted-foreground mb-8 max-w-md">
               To access Runway's generative models, you need to configure your API key. This is stored securely in your browser.
             </p>
             <Button
-              onClick={() => setIsSettingsOpen(true)}
-              className="bg-white text-black hover:bg-white/90 h-12 px-8 rounded-xl font-bold"
+              onClick={() => router.push("/settings")}
+              className="bg-primary text-primary-foreground hover:bg-primary/90 h-12 px-8 rounded-xl font-bold"
             >
               Configure API Key
             </Button>
@@ -567,18 +308,18 @@ export function RunwayDashboard() {
       {apiKey && (
         <main className="relative z-10 max-w-7xl mx-auto px-6 py-12">
           <Tabs defaultValue="generation" className="w-full space-y-8">
-            <div className="flex items-center justify-between border-b border-white/5 pb-4">
+            <div className="flex items-center justify-between border-b border-border pb-4">
               <TabsList className="bg-transparent gap-6 h-auto p-0 flex-wrap">
-                <TabsTrigger value="generation" className="bg-transparent text-white/40 data-[state=active]:text-white data-[state=active]:bg-transparent border-b-2 border-transparent data-[state=active]:border-purple-500 rounded-none px-0 pb-4 h-auto font-semibold tracking-wide">
+                <TabsTrigger value="generation" className="bg-transparent text-muted-foreground data-[state=active]:text-foreground data-[state=active]:bg-transparent border-b-2 border-transparent data-[state=active]:border-purple-500 rounded-none px-0 pb-4 h-auto font-semibold tracking-wide">
                   Video
                 </TabsTrigger>
-                <TabsTrigger value="image" className="bg-transparent text-white/40 data-[state=active]:text-white data-[state=active]:bg-transparent border-b-2 border-transparent data-[state=active]:border-purple-500 rounded-none px-0 pb-4 h-auto font-semibold tracking-wide">
+                <TabsTrigger value="image" className="bg-transparent text-muted-foreground data-[state=active]:text-foreground data-[state=active]:bg-transparent border-b-2 border-transparent data-[state=active]:border-purple-500 rounded-none px-0 pb-4 h-auto font-semibold tracking-wide">
                   Image
                 </TabsTrigger>
-                <TabsTrigger value="audio" className="bg-transparent text-white/40 data-[state=active]:text-white data-[state=active]:bg-transparent border-b-2 border-transparent data-[state=active]:border-purple-500 rounded-none px-0 pb-4 h-auto font-semibold tracking-wide">
+                <TabsTrigger value="audio" className="bg-transparent text-muted-foreground data-[state=active]:text-foreground data-[state=active]:bg-transparent border-b-2 border-transparent data-[state=active]:border-purple-500 rounded-none px-0 pb-4 h-auto font-semibold tracking-wide">
                   Audio & Voice
                 </TabsTrigger>
-                <TabsTrigger value="characters" className="bg-transparent text-white/40 data-[state=active]:text-white data-[state=active]:bg-transparent border-b-2 border-transparent data-[state=active]:border-purple-500 rounded-none px-0 pb-4 h-auto font-semibold tracking-wide">
+                <TabsTrigger value="characters" className="bg-transparent text-muted-foreground data-[state=active]:text-foreground data-[state=active]:bg-transparent border-b-2 border-transparent data-[state=active]:border-purple-500 rounded-none px-0 pb-4 h-auto font-semibold tracking-wide">
                   Characters
                 </TabsTrigger>
               </TabsList>
@@ -588,29 +329,29 @@ export function RunwayDashboard() {
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
                 {/* Left Column: Generation Controls */}
                 <div className="lg:col-span-5 space-y-6">
-                  <Card className="bg-white/[0.03] border-white/10 backdrop-blur-xl shadow-2xl overflow-hidden">
+                  <Card className="bg-card border-border backdrop-blur-xl shadow-2xl overflow-hidden">
                     <div className="h-1 bg-gradient-to-r from-purple-600 via-blue-600 to-purple-600" />
                     <CardHeader>
                       <CardTitle className="text-2xl font-semibold flex items-center gap-2">
                         <Zap className="w-6 h-6 text-purple-500 fill-purple-500" />
                         Magic Generation
                       </CardTitle>
-                      <CardDescription className="text-white/40">
+                      <CardDescription className="text-muted-foreground">
                         Transform your ideas into cinematic video with GWM-1.
                       </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-6">
                       <Tabs defaultValue="text" className="w-full">
-                        <TabsList className="grid w-full grid-cols-3 bg-white/5 p-1 border border-white/10 h-12 rounded-xl">
-                          <TabsTrigger value="text" className="rounded-lg data-[state=active]:bg-white/10 data-[state=active]:text-white text-xs">
+                        <TabsList className="grid w-full grid-cols-3 bg-secondary p-1 border border-border h-12 rounded-xl">
+                          <TabsTrigger value="text" className="rounded-lg data-[state=active]:bg-secondary data-[state=active]:text-foreground text-xs">
                             <Video className="w-3.5 h-3.5 mr-1.5" />
                             Text→Video
                           </TabsTrigger>
-                          <TabsTrigger value="img2vid" className="rounded-lg data-[state=active]:bg-white/10 data-[state=active]:text-white text-xs">
+                          <TabsTrigger value="img2vid" className="rounded-lg data-[state=active]:bg-secondary data-[state=active]:text-foreground text-xs">
                             <ImageIcon className="w-3.5 h-3.5 mr-1.5" />
                             Img→Video
                           </TabsTrigger>
-                          <TabsTrigger value="vid2vid" className="rounded-lg data-[state=active]:bg-white/10 data-[state=active]:text-white text-xs">
+                          <TabsTrigger value="vid2vid" className="rounded-lg data-[state=active]:bg-secondary data-[state=active]:text-foreground text-xs">
                             <Play className="w-3.5 h-3.5 mr-1.5" />
                             Vid→Video
                           </TabsTrigger>
@@ -618,40 +359,54 @@ export function RunwayDashboard() {
 
                         <TabsContent value="text" className="mt-6 space-y-4">
                           <div className="space-y-2">
-                            <label className="text-xs font-medium text-white/60 uppercase tracking-wider">Prompt</label>
-                            <Textarea placeholder="A cinematic drone shot of a futuristic neon city..." className="bg-black/40 border-white/10 min-h-[120px] focus:border-purple-500/50 text-white placeholder:text-white/20 rounded-xl resize-none" value={prompt} onChange={(e) => setPrompt(e.target.value)} />
+                            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Model</label>
+                            <Select value={t2vModel} onValueChange={(val) => val && setT2vModel(val)}>
+                              <SelectTrigger className="bg-background border-border h-10 text-foreground rounded-xl"><SelectValue /></SelectTrigger>
+                              <SelectContent className="bg-neutral-900 border-border text-foreground max-h-60">{VIDEO_MODELS.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}</SelectContent>
+                            </Select>
                           </div>
-                          <Button className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 text-white font-semibold h-12 rounded-xl shadow-lg shadow-purple-500/20" onClick={() => runAction("t2v", () => createTextToVideo({ promptText: prompt, apiKey: apiKey! }))} disabled={genLoading === "t2v" || !prompt}>
+                          <div className="space-y-2">
+                            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Prompt</label>
+                            <Textarea placeholder="A cinematic drone shot of a futuristic neon city..." className="bg-background border-border min-h-[120px] focus:border-purple-500/50 text-foreground placeholder:text-muted-foreground rounded-xl resize-none" value={prompt} onChange={(e) => setPrompt(e.target.value)} />
+                          </div>
+                          <Button className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 text-white font-semibold h-12 rounded-xl shadow-lg shadow-purple-500/20" onClick={() => runAction("t2v", () => createTextToVideo({ promptText: prompt, model: t2vModel, apiKey: apiKey! }))} disabled={genLoading === "t2v" || !prompt}>
                             {genLoading === "t2v" ? <Loader2 className="w-5 h-5 animate-spin" /> : <>Generate Video <Sparkles className="w-4 h-4 ml-2" /></>}
                           </Button>
                         </TabsContent>
 
                         <TabsContent value="img2vid" className="mt-6 space-y-4">
                           <div className="space-y-2">
-                            <label className="text-xs font-medium text-white/60 uppercase tracking-wider">Image URL</label>
-                            <Input placeholder="https://example.com/image.jpg" className="bg-black/40 border-white/10 h-12 text-white placeholder:text-white/20 rounded-xl" value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} />
+                            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Model</label>
+                            <Select value={i2vModel} onValueChange={(val) => val && setI2vModel(val)}>
+                              <SelectTrigger className="bg-background border-border h-10 text-foreground rounded-xl"><SelectValue /></SelectTrigger>
+                              <SelectContent className="bg-neutral-900 border-border text-foreground max-h-60">{VIDEO_MODELS.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}</SelectContent>
+                            </Select>
                           </div>
                           <div className="space-y-2">
-                            <label className="text-xs font-medium text-white/60 uppercase tracking-wider">Motion Description</label>
-                            <Textarea placeholder="Add realistic rain and lightning..." className="bg-black/40 border-white/10 min-h-[100px] text-white placeholder:text-white/20 rounded-xl resize-none" value={prompt} onChange={(e) => setPrompt(e.target.value)} />
+                            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Image URL</label>
+                            <MediaUploadInput placeholder="https://example.com/image.jpg" value={imageUrl} onChange={setImageUrl} accept="image/*" />
                           </div>
-                          <Button className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 text-white font-semibold h-12 rounded-xl shadow-lg shadow-purple-500/20" onClick={() => runAction("i2v", () => createImageToVideo({ promptText: prompt, promptImage: imageUrl, apiKey: apiKey! }))} disabled={genLoading === "i2v" || !prompt || !imageUrl}>
+                          <div className="space-y-2">
+                            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Motion Description</label>
+                            <Textarea placeholder="Add realistic rain and lightning..." className="bg-background border-border min-h-[100px] text-foreground placeholder:text-muted-foreground rounded-xl resize-none" value={prompt} onChange={(e) => setPrompt(e.target.value)} />
+                          </div>
+                          <Button className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 text-white font-semibold h-12 rounded-xl shadow-lg shadow-purple-500/20" onClick={() => runAction("i2v", () => createImageToVideo({ promptText: prompt, promptImage: imageUrl, model: i2vModel, apiKey: apiKey! }))} disabled={genLoading === "i2v" || !prompt || !imageUrl}>
                             {genLoading === "i2v" ? <Loader2 className="w-5 h-5 animate-spin" /> : <>Animate Image <Play className="w-4 h-4 ml-2" /></>}
                           </Button>
                         </TabsContent>
 
                         <TabsContent value="vid2vid" className="mt-6 space-y-4">
                           <div className="space-y-2">
-                            <label className="text-xs font-medium text-white/60 uppercase tracking-wider">Video URL</label>
-                            <Input placeholder="https://example.com/video.mp4" className="bg-black/40 border-white/10 h-12 text-white placeholder:text-white/20 rounded-xl" value={videoUri} onChange={(e) => setVideoUri(e.target.value)} />
+                            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Video URL</label>
+                            <MediaUploadInput placeholder="https://example.com/video.mp4" value={videoUri} onChange={setVideoUri} accept="video/*" />
                           </div>
                           <div className="space-y-2">
-                            <label className="text-xs font-medium text-white/60 uppercase tracking-wider">Prompt</label>
-                            <Textarea placeholder="Transform this video into an anime style..." className="bg-black/40 border-white/10 min-h-[100px] text-white placeholder:text-white/20 rounded-xl resize-none" value={prompt} onChange={(e) => setPrompt(e.target.value)} />
+                            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Prompt</label>
+                            <Textarea placeholder="Transform this video into an anime style..." className="bg-background border-border min-h-[100px] text-foreground placeholder:text-muted-foreground rounded-xl resize-none" value={prompt} onChange={(e) => setPrompt(e.target.value)} />
                           </div>
                           <div className="space-y-2">
-                            <label className="text-xs font-medium text-white/60 uppercase tracking-wider">Reference Image (optional)</label>
-                            <Input placeholder="https://example.com/style-ref.jpg" className="bg-black/40 border-white/10 h-12 text-white placeholder:text-white/20 rounded-xl" value={refImageUri} onChange={(e) => setRefImageUri(e.target.value)} />
+                            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Reference Image (optional)</label>
+                            <MediaUploadInput placeholder="https://example.com/style-ref.jpg" value={refImageUri} onChange={setRefImageUri} accept="image/*" />
                           </div>
                           <Button className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 text-white font-semibold h-12 rounded-xl shadow-lg shadow-purple-500/20" onClick={() => runAction("v2v", () => createVideoToVideo({ promptText: prompt, videoUri, referenceImageUri: refImageUri || undefined, apiKey: apiKey! }))} disabled={genLoading === "v2v" || !prompt || !videoUri}>
                             {genLoading === "v2v" ? <Loader2 className="w-5 h-5 animate-spin" /> : <>Transform Video <Wand2 className="w-4 h-4 ml-2" /></>}
@@ -666,21 +421,21 @@ export function RunwayDashboard() {
                 <div className="lg:col-span-7 space-y-6">
                   <div className="flex items-center justify-between">
                     <h2 className="text-xl font-semibold flex items-center gap-2">
-                      <History className="w-5 h-5 text-white/60" />
+                      <History className="w-5 h-5 text-muted-foreground" />
                       Recent Generations
                     </h2>
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {tasks.length === 0 ? (
-                      <div className="col-span-2 py-32 flex flex-col items-center justify-center border-2 border-dashed border-white/5 rounded-3xl text-white/20">
+                      <div className="col-span-2 py-32 flex flex-col items-center justify-center border-2 border-dashed border-border rounded-3xl text-muted-foreground">
                         <Video className="w-12 h-12 mb-4 opacity-50" />
                         <p className="font-medium">No generations yet. Start by creating something magic.</p>
                       </div>
                     ) : (
                       tasks.map((task) => (
-                        <Card key={task.taskId} className="bg-white/[0.02] border-white/10 overflow-hidden group hover:border-white/20 transition-all">
-                          <div className="aspect-video bg-black flex items-center justify-center relative overflow-hidden">
+                        <Card key={task.taskId} className="bg-card border-border overflow-hidden group hover:border-border hover:border-foreground/20 transition-all">
+                          <div className="aspect-video bg-background flex items-center justify-center relative overflow-hidden">
                             {task.outputUrl ? (
                               <video
                                 src={task.outputUrl}
@@ -688,20 +443,20 @@ export function RunwayDashboard() {
                                 controls
                               />
                             ) : (
-                              <div className="flex flex-col items-center gap-3 text-white/20">
+                              <div className="flex flex-col items-center gap-3 text-muted-foreground">
                                 <Loader2 className="w-8 h-8 animate-spin" />
                                 <span className="text-[10px] font-bold uppercase tracking-[0.2em]">{task.status}</span>
                               </div>
                             )}
-                            <div className="absolute top-2 right-2 px-2 py-1 rounded-md bg-black/80 backdrop-blur-md text-[10px] font-bold uppercase tracking-widest border border-white/10 text-white/80">
+                            <div className="absolute top-2 right-2 px-2 py-1 rounded-md bg-background/80 backdrop-blur-md text-[10px] font-bold uppercase tracking-widest border border-border text-foreground/80">
                               {task.model}
                             </div>
                           </div>
                           <CardContent className="p-4">
-                            <p className="text-sm text-white/80 line-clamp-2 font-medium leading-relaxed">
+                            <p className="text-sm text-foreground/80 line-clamp-2 font-medium leading-relaxed">
                               {task.promptText}
                             </p>
-                            <div className="mt-4 flex items-center justify-between text-[10px] text-white/40 uppercase tracking-widest font-bold">
+                            <div className="mt-4 flex items-center justify-between text-[10px] text-muted-foreground uppercase tracking-widest font-bold">
                               <span>{new Date(task.createdAt).toLocaleDateString()}</span>
                               <span className="text-purple-500">{task.type.replace("_", " ")}</span>
                             </div>
@@ -717,25 +472,32 @@ export function RunwayDashboard() {
             {/* ─── Image Tab ─── */}
             <TabsContent value="image" className="mt-0 focus-visible:outline-none">
               <div className="max-w-2xl mx-auto">
-                <Card className="bg-white/[0.03] border-white/10 backdrop-blur-xl shadow-2xl overflow-hidden">
+                <Card className="bg-card border-border backdrop-blur-xl shadow-2xl overflow-hidden">
                   <div className="h-1 bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-600" />
                   <CardHeader>
                     <CardTitle className="text-2xl font-semibold flex items-center gap-2">
                       <ImageIcon className="w-6 h-6 text-emerald-500" />
                       Image Generation
                     </CardTitle>
-                    <CardDescription className="text-white/40">Generate images from text prompts with optional reference images.</CardDescription>
+                    <CardDescription className="text-muted-foreground">Generate images from text prompts with optional reference images.</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div className="space-y-2">
-                      <label className="text-xs font-medium text-white/60 uppercase tracking-wider">Prompt</label>
-                      <Textarea placeholder="A serene landscape with mountains at golden hour..." className="bg-black/40 border-white/10 min-h-[120px] text-white placeholder:text-white/20 rounded-xl resize-none" value={prompt} onChange={(e) => setPrompt(e.target.value)} />
+                      <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Model</label>
+                      <Select value={t2iModel} onValueChange={(val) => val && setT2iModel(val)}>
+                        <SelectTrigger className="bg-background border-border h-10 text-foreground rounded-xl"><SelectValue /></SelectTrigger>
+                        <SelectContent className="bg-neutral-900 border-border text-foreground max-h-60">{IMAGE_MODELS.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}</SelectContent>
+                      </Select>
                     </div>
                     <div className="space-y-2">
-                      <label className="text-xs font-medium text-white/60 uppercase tracking-wider">Reference Image URL (optional)</label>
-                      <Input placeholder="https://example.com/reference.jpg" className="bg-black/40 border-white/10 h-12 text-white placeholder:text-white/20 rounded-xl" value={refImageUri} onChange={(e) => setRefImageUri(e.target.value)} />
+                      <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Prompt</label>
+                      <Textarea placeholder="A serene landscape with mountains at golden hour..." className="bg-background border-border min-h-[120px] text-foreground placeholder:text-muted-foreground rounded-xl resize-none" value={prompt} onChange={(e) => setPrompt(e.target.value)} />
                     </div>
-                    <Button className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-semibold h-12 rounded-xl shadow-lg shadow-emerald-500/20" onClick={() => runAction("t2i", () => createTextToImage({ promptText: prompt, referenceImages: refImageUri ? [{ uri: refImageUri }] : undefined, apiKey: apiKey! }))} disabled={genLoading === "t2i" || !prompt}>
+                    <div className="space-y-2">
+                      <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Reference Image URL (optional)</label>
+                      <MediaUploadInput placeholder="https://example.com/reference.jpg" value={refImageUri} onChange={setRefImageUri} accept="image/*" />
+                    </div>
+                    <Button className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-semibold h-12 rounded-xl shadow-lg shadow-emerald-500/20" onClick={() => runAction("t2i", () => createTextToImage({ promptText: prompt, model: t2iModel, referenceImages: refImageUri ? [{ uri: refImageUri }] : undefined, apiKey: apiKey! }))} disabled={genLoading === "t2i" || !prompt}>
                       {genLoading === "t2i" ? <Loader2 className="w-5 h-5 animate-spin" /> : <>Generate Image <Sparkles className="w-4 h-4 ml-2" /></>}
                     </Button>
                   </CardContent>
@@ -746,38 +508,38 @@ export function RunwayDashboard() {
             {/* ─── Audio & Voice Tab ─── */}
             <TabsContent value="audio" className="mt-0 focus-visible:outline-none">
               <div className="max-w-2xl mx-auto">
-                <Card className="bg-white/[0.03] border-white/10 backdrop-blur-xl shadow-2xl overflow-hidden">
+                <Card className="bg-card border-border backdrop-blur-xl shadow-2xl overflow-hidden">
                   <div className="h-1 bg-gradient-to-r from-orange-600 via-amber-600 to-orange-600" />
                   <CardHeader>
                     <CardTitle className="text-2xl font-semibold flex items-center gap-2">
                       <AudioLines className="w-6 h-6 text-orange-500" />
                       Audio & Voice Tools
                     </CardTitle>
-                    <CardDescription className="text-white/40">Sound effects, speech generation, dubbing, and isolation.</CardDescription>
+                    <CardDescription className="text-muted-foreground">Sound effects, speech generation, dubbing, and isolation.</CardDescription>
                   </CardHeader>
                   <CardContent>
                     <Tabs defaultValue="sfx" className="w-full">
-                      <TabsList className="grid w-full grid-cols-5 bg-white/5 p-1 border border-white/10 h-10 rounded-xl mb-6">
-                        <TabsTrigger value="sfx" className="rounded-lg data-[state=active]:bg-white/10 text-[10px]">SFX</TabsTrigger>
-                        <TabsTrigger value="tts" className="rounded-lg data-[state=active]:bg-white/10 text-[10px]">TTS</TabsTrigger>
-                        <TabsTrigger value="sts" className="rounded-lg data-[state=active]:bg-white/10 text-[10px]">STS</TabsTrigger>
-                        <TabsTrigger value="dub" className="rounded-lg data-[state=active]:bg-white/10 text-[10px]">Dub</TabsTrigger>
-                        <TabsTrigger value="isolate" className="rounded-lg data-[state=active]:bg-white/10 text-[10px]">Isolate</TabsTrigger>
+                      <TabsList className="grid w-full grid-cols-5 bg-secondary p-1 border border-border h-10 rounded-xl mb-6">
+                        <TabsTrigger value="sfx" className="rounded-lg data-[state=active]:bg-secondary text-[10px]">SFX</TabsTrigger>
+                        <TabsTrigger value="tts" className="rounded-lg data-[state=active]:bg-secondary text-[10px]">TTS</TabsTrigger>
+                        <TabsTrigger value="sts" className="rounded-lg data-[state=active]:bg-secondary text-[10px]">STS</TabsTrigger>
+                        <TabsTrigger value="dub" className="rounded-lg data-[state=active]:bg-secondary text-[10px]">Dub</TabsTrigger>
+                        <TabsTrigger value="isolate" className="rounded-lg data-[state=active]:bg-secondary text-[10px]">Isolate</TabsTrigger>
                       </TabsList>
 
                       {/* Sound Effects */}
                       <TabsContent value="sfx" className="space-y-4">
                         <div className="space-y-2">
-                          <label className="text-xs font-medium text-white/60 uppercase tracking-wider">Description</label>
-                          <Textarea placeholder="A thunderstorm with heavy rain..." className="bg-black/40 border-white/10 min-h-[100px] text-white placeholder:text-white/20 rounded-xl resize-none" value={prompt} onChange={(e) => setPrompt(e.target.value)} />
+                          <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Description</label>
+                          <Textarea placeholder="A thunderstorm with heavy rain..." className="bg-background border-border min-h-[100px] text-foreground placeholder:text-muted-foreground rounded-xl resize-none" value={prompt} onChange={(e) => setPrompt(e.target.value)} />
                         </div>
                         <div className="grid grid-cols-2 gap-4">
                           <div className="space-y-2">
-                            <label className="text-xs font-medium text-white/60 uppercase tracking-wider">Duration (s)</label>
-                            <Input type="number" min={0.5} max={30} step={0.5} className="bg-black/40 border-white/10 h-10 text-white rounded-xl" value={sfxDuration} onChange={(e) => setSfxDuration(Number(e.target.value))} />
+                            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Duration (s)</label>
+                            <Input type="number" min={0.5} max={30} step={0.5} className="bg-background border-border h-10 text-foreground rounded-xl" value={sfxDuration} onChange={(e) => setSfxDuration(Number(e.target.value))} />
                           </div>
                           <div className="space-y-2 flex flex-col justify-end">
-                            <label className="flex items-center gap-2 text-xs font-medium text-white/60 cursor-pointer">
+                            <label className="flex items-center gap-2 text-xs font-medium text-muted-foreground cursor-pointer">
                               <input type="checkbox" checked={sfxLoop} onChange={(e) => setSfxLoop(e.target.checked)} className="rounded" /> Loop
                             </label>
                           </div>
@@ -790,14 +552,14 @@ export function RunwayDashboard() {
                       {/* Text to Speech */}
                       <TabsContent value="tts" className="space-y-4">
                         <div className="space-y-2">
-                          <label className="text-xs font-medium text-white/60 uppercase tracking-wider">Text</label>
-                          <Textarea placeholder="The quick brown fox jumps over the lazy dog..." className="bg-black/40 border-white/10 min-h-[100px] text-white placeholder:text-white/20 rounded-xl resize-none" value={prompt} onChange={(e) => setPrompt(e.target.value)} />
+                          <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Text</label>
+                          <Textarea placeholder="The quick brown fox jumps over the lazy dog..." className="bg-background border-border min-h-[100px] text-foreground placeholder:text-muted-foreground rounded-xl resize-none" value={prompt} onChange={(e) => setPrompt(e.target.value)} />
                         </div>
                         <div className="space-y-2">
-                          <label className="text-xs font-medium text-white/60 uppercase tracking-wider">Voice</label>
+                          <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Voice</label>
                           <Select value={ttsVoice} onValueChange={(val) => val && setTtsVoice(val)}>
-                            <SelectTrigger className="bg-black/40 border-white/10 h-10 text-white rounded-xl"><SelectValue /></SelectTrigger>
-                            <SelectContent className="bg-neutral-900 border-white/10 text-white max-h-60">{TTS_VOICES.map(v => <SelectItem key={v} value={v}>{v}</SelectItem>)}</SelectContent>
+                            <SelectTrigger className="bg-background border-border h-10 text-foreground rounded-xl"><SelectValue /></SelectTrigger>
+                            <SelectContent className="bg-neutral-900 border-border text-foreground max-h-60">{TTS_VOICES.map(v => <SelectItem key={v} value={v}>{v}</SelectItem>)}</SelectContent>
                           </Select>
                         </div>
                         <Button className="w-full bg-gradient-to-r from-orange-600 to-amber-600 text-white font-semibold h-12 rounded-xl" onClick={() => runAction("tts", () => createTextToSpeech({ promptText: prompt, voicePresetId: ttsVoice, apiKey: apiKey! }))} disabled={genLoading === "tts" || !prompt}>
@@ -808,14 +570,14 @@ export function RunwayDashboard() {
                       {/* Speech to Speech */}
                       <TabsContent value="sts" className="space-y-4">
                         <div className="space-y-2">
-                          <label className="text-xs font-medium text-white/60 uppercase tracking-wider">Audio / Video URL</label>
-                          <Input placeholder="https://example.com/audio.mp3" className="bg-black/40 border-white/10 h-12 text-white placeholder:text-white/20 rounded-xl" value={audioUri} onChange={(e) => setAudioUri(e.target.value)} />
+                          <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Audio / Video URL</label>
+                          <MediaUploadInput placeholder="https://example.com/audio.mp3" value={audioUri} onChange={setAudioUri} accept="audio/*,video/*" />
                         </div>
                         <div className="space-y-2">
-                          <label className="text-xs font-medium text-white/60 uppercase tracking-wider">Target Voice</label>
+                          <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Target Voice</label>
                           <Select value={ttsVoice} onValueChange={(val) => val && setTtsVoice(val)}>
-                            <SelectTrigger className="bg-black/40 border-white/10 h-10 text-white rounded-xl"><SelectValue /></SelectTrigger>
-                            <SelectContent className="bg-neutral-900 border-white/10 text-white max-h-60">{TTS_VOICES.map(v => <SelectItem key={v} value={v}>{v}</SelectItem>)}</SelectContent>
+                            <SelectTrigger className="bg-background border-border h-10 text-foreground rounded-xl"><SelectValue /></SelectTrigger>
+                            <SelectContent className="bg-neutral-900 border-border text-foreground max-h-60">{TTS_VOICES.map(v => <SelectItem key={v} value={v}>{v}</SelectItem>)}</SelectContent>
                           </Select>
                         </div>
                         <Button className="w-full bg-gradient-to-r from-orange-600 to-amber-600 text-white font-semibold h-12 rounded-xl" onClick={() => runAction("sts", () => createSpeechToSpeech({ mediaType: "audio", mediaUri: audioUri, voicePresetId: ttsVoice, apiKey: apiKey! }))} disabled={genLoading === "sts" || !audioUri}>
@@ -826,14 +588,14 @@ export function RunwayDashboard() {
                       {/* Voice Dubbing */}
                       <TabsContent value="dub" className="space-y-4">
                         <div className="space-y-2">
-                          <label className="text-xs font-medium text-white/60 uppercase tracking-wider">Audio URL</label>
-                          <Input placeholder="https://example.com/audio.mp3" className="bg-black/40 border-white/10 h-12 text-white placeholder:text-white/20 rounded-xl" value={audioUri} onChange={(e) => setAudioUri(e.target.value)} />
+                          <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Audio URL</label>
+                          <MediaUploadInput placeholder="https://example.com/audio.mp3" value={audioUri} onChange={setAudioUri} accept="audio/*" />
                         </div>
                         <div className="space-y-2">
-                          <label className="text-xs font-medium text-white/60 uppercase tracking-wider">Target Language</label>
+                          <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Target Language</label>
                           <Select value={targetLang} onValueChange={(val) => val && setTargetLang(val)}>
-                            <SelectTrigger className="bg-black/40 border-white/10 h-10 text-white rounded-xl"><SelectValue /></SelectTrigger>
-                            <SelectContent className="bg-neutral-900 border-white/10 text-white max-h-60">{LANGUAGES.map(l => <SelectItem key={l.code} value={l.code}>{l.name}</SelectItem>)}</SelectContent>
+                            <SelectTrigger className="bg-background border-border h-10 text-foreground rounded-xl"><SelectValue /></SelectTrigger>
+                            <SelectContent className="bg-neutral-900 border-border text-foreground max-h-60">{LANGUAGES.map(l => <SelectItem key={l.code} value={l.code}>{l.name}</SelectItem>)}</SelectContent>
                           </Select>
                         </div>
                         <Button className="w-full bg-gradient-to-r from-orange-600 to-amber-600 text-white font-semibold h-12 rounded-xl" onClick={() => runAction("dub", () => createVoiceDubbing({ audioUri, targetLang, apiKey: apiKey! }))} disabled={genLoading === "dub" || !audioUri}>
@@ -844,8 +606,8 @@ export function RunwayDashboard() {
                       {/* Voice Isolation */}
                       <TabsContent value="isolate" className="space-y-4">
                         <div className="space-y-2">
-                          <label className="text-xs font-medium text-white/60 uppercase tracking-wider">Audio URL (min 4.6s)</label>
-                          <Input placeholder="https://example.com/audio.mp3" className="bg-black/40 border-white/10 h-12 text-white placeholder:text-white/20 rounded-xl" value={audioUri} onChange={(e) => setAudioUri(e.target.value)} />
+                          <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Audio URL (min 4.6s)</label>
+                          <MediaUploadInput placeholder="https://example.com/audio.mp3" value={audioUri} onChange={setAudioUri} accept="audio/*" />
                         </div>
                         <Button className="w-full bg-gradient-to-r from-orange-600 to-amber-600 text-white font-semibold h-12 rounded-xl" onClick={() => runAction("iso", () => createVoiceIsolation({ audioUri, apiKey: apiKey! }))} disabled={genLoading === "iso" || !audioUri}>
                           {genLoading === "iso" ? <Loader2 className="w-5 h-5 animate-spin" /> : <>Isolate Voice <AudioLines className="w-4 h-4 ml-2" /></>}
@@ -860,52 +622,52 @@ export function RunwayDashboard() {
             <TabsContent value="characters" className="mt-0 focus-visible:outline-none">
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
                 <div className="lg:col-span-5 space-y-6">
-                  <Card className="bg-white/[0.03] border-white/10 backdrop-blur-xl shadow-2xl overflow-hidden">
+                  <Card className="bg-card border-border backdrop-blur-xl shadow-2xl overflow-hidden">
                     <div className="h-1 bg-gradient-to-r from-blue-600 via-purple-600 to-blue-600" />
                     <CardHeader>
                       <CardTitle className="text-2xl font-semibold flex items-center gap-2">
                         <Users className="w-6 h-6 text-blue-500" />
                         Create Character
                       </CardTitle>
-                      <CardDescription className="text-white/40">
+                      <CardDescription className="text-muted-foreground">
                         Design a digital persona from a single image.
                       </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">
                       <div className="space-y-2">
-                        <label className="text-xs font-medium text-white/60 uppercase tracking-wider">Name</label>
+                        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Name</label>
                         <Input
                           placeholder="Character Name"
-                          className="bg-black/40 border-white/10 h-12 text-white placeholder:text-white/20 rounded-xl"
+                          className="bg-background border-border h-12 text-foreground placeholder:text-muted-foreground rounded-xl"
                           value={avatarName}
                           onChange={(e) => setAvatarName(e.target.value)}
                         />
                       </div>
                       <div className="space-y-2">
-                        <label className="text-xs font-medium text-white/60 uppercase tracking-wider">Reference Image URL</label>
-                        <Input
+                        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Reference Image URL</label>
+                        <MediaUploadInput
                           placeholder="https://example.com/character.jpg"
-                          className="bg-black/40 border-white/10 h-12 text-white placeholder:text-white/20 rounded-xl"
                           value={avatarImg}
-                          onChange={(e) => setAvatarImg(e.target.value)}
+                          onChange={setAvatarImg}
+                          accept="image/*"
                         />
                       </div>
                       <div className="space-y-2">
-                        <label className="text-xs font-medium text-white/60 uppercase tracking-wider">Personality & Knowledge</label>
+                        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Personality & Knowledge</label>
                         <Textarea
                           placeholder="Describe how the character should behave and what they know..."
-                          className="bg-black/40 border-white/10 min-h-[100px] text-white placeholder:text-white/20 rounded-xl resize-none"
+                          className="bg-background border-border min-h-[100px] text-foreground placeholder:text-muted-foreground rounded-xl resize-none"
                           value={avatarPersonality}
                           onChange={(e) => setAvatarPersonality(e.target.value)}
                         />
                       </div>
                       <div className="space-y-2">
-                        <label className="text-xs font-medium text-white/60 uppercase tracking-wider">Voice Preset</label>
+                        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Voice Preset</label>
                         <Select value={avatarVoice} onValueChange={(val) => val && setAvatarVoice(val)}>
-                          <SelectTrigger className="bg-black/40 border-white/10 h-12 text-white rounded-xl">
+                          <SelectTrigger className="bg-background border-border h-12 text-foreground rounded-xl">
                             <SelectValue placeholder="Select a voice" />
                           </SelectTrigger>
-                          <SelectContent className="bg-neutral-900 border-white/10 text-white">
+                          <SelectContent className="bg-neutral-900 border-border text-foreground">
                             {VOICES.map((v) => (
                               <SelectItem key={v.id} value={v.id}>{v.name}</SelectItem>
                             ))}
@@ -913,7 +675,7 @@ export function RunwayDashboard() {
                         </Select>
                       </div>
                       <Button
-                        className="w-full bg-white text-black hover:bg-white/90 font-bold h-12 rounded-xl transition-all"
+                        className="w-full bg-primary text-primary-foreground hover:bg-primary/90 font-bold h-12 rounded-xl transition-all"
                         onClick={handleCreateAvatar}
                         disabled={isCreatingAvatar || !avatarName || !avatarImg}
                       >
@@ -925,39 +687,39 @@ export function RunwayDashboard() {
 
                 <div className="lg:col-span-7 space-y-6">
                   <h2 className="text-xl font-semibold flex items-center gap-2">
-                    <Users className="w-5 h-5 text-white/60" />
+                    <Users className="w-5 h-5 text-muted-foreground" />
                     My Characters
                   </h2>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {avatars.length === 0 ? (
-                      <div className="col-span-2 py-32 flex flex-col items-center justify-center border-2 border-dashed border-white/5 rounded-3xl text-white/20">
+                      <div className="col-span-2 py-32 flex flex-col items-center justify-center border-2 border-dashed border-border rounded-3xl text-muted-foreground">
                         <Users className="w-12 h-12 mb-4 opacity-50" />
                         <p className="font-medium">No characters deployed yet.</p>
                       </div>
                     ) : (
                       avatars.map((avatar) => (
-                        <Card key={avatar.avatarId} className="bg-white/[0.02] border-white/10 overflow-hidden hover:border-white/20 transition-all flex flex-col">
-                          <div className="aspect-[4/5] bg-black relative">
+                        <Card key={avatar.avatarId} className="bg-card border-border overflow-hidden hover:border-border hover:border-foreground/20 transition-all flex flex-col">
+                          <div className="aspect-[4/5] bg-background relative">
                             <img src={avatar.referenceImage} alt={avatar.name} className="w-full h-full object-cover opacity-60" />
                             <div className="absolute inset-0 bg-gradient-to-t from-black to-transparent" />
                             <div className="absolute bottom-4 left-4 right-4">
                               <h3 className="text-lg font-bold">{avatar.name}</h3>
                               <div className="flex items-center gap-2 mt-1">
-                                <Mic className="w-3 h-3 text-white/40" />
-                                <span className="text-[10px] uppercase font-bold text-white/40 tracking-wider">Voice: {avatar.voiceId}</span>
+                                <Mic className="w-3 h-3 text-muted-foreground" />
+                                <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Voice: {avatar.voiceId}</span>
                               </div>
                             </div>
                           </div>
                           <CardContent className="p-4 flex-1 flex flex-col justify-between">
-                            <p className="text-xs text-white/60 line-clamp-2 italic leading-relaxed">
+                            <p className="text-xs text-muted-foreground line-clamp-2 italic leading-relaxed">
                               "{avatar.personality}"
                             </p>
                             <div className="mt-4 flex gap-2">
-                              <Button variant="outline" size="sm" className="flex-1 bg-white/5 border-white/10 text-white text-[10px] uppercase tracking-widest font-bold h-8">
+                              <Button variant="outline" size="sm" className="flex-1 bg-secondary border-border text-foreground text-[10px] uppercase tracking-widest font-bold h-8">
                                 <MessageSquare className="w-3 h-3 mr-2" />
                                 Chat
                               </Button>
-                              <Button variant="outline" size="sm" className="flex-1 bg-white/5 border-white/10 text-white text-[10px] uppercase tracking-widest font-bold h-8">
+                              <Button variant="outline" size="sm" className="flex-1 bg-secondary border-border text-foreground text-[10px] uppercase tracking-widest font-bold h-8">
                                 <Video className="w-3 h-3 mr-2" />
                                 Generate
                               </Button>
