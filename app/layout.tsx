@@ -5,7 +5,7 @@ import { ThemeProvider } from "@/components/theme-provider"
 import { cn } from "@/lib/utils";
 import { ConvexClientProvider } from "@/components/convex-client-provider";
 
-const figtree = Figtree({subsets:['latin'],variable:'--font-sans'})
+const figtree = Figtree({ subsets: ['latin'], variable: '--font-sans' })
 
 const fontMono = Geist_Mono({
   subsets: ["latin"],
@@ -29,7 +29,6 @@ export default function RootLayout({
         <ConvexClientProvider>
           <ThemeProvider>
             {children}
-            <Chatbot />
           </ThemeProvider>
         </ConvexClientProvider>
       </body>
