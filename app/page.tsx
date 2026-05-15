@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { ArrowRight, Sparkles, Video, AudioLines, Users, Wand2, Globe, ArrowUpRight } from "lucide-react";
+import { ArrowRight, Sparkles, Video, AudioLines, Users, Wand2, Globe, ArrowUpRight, MessageSquare } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 
@@ -31,6 +31,9 @@ export default function HomePage() {
         <nav className="hidden md:flex items-center gap-8 text-sm font-medium text-white/60">
           <Link href="#features" className="hover:text-white transition-colors">Features</Link>
           <Link href="#capabilities" className="hover:text-white transition-colors">Capabilities</Link>
+          <Link href="/chat" className="hover:text-white transition-colors flex items-center gap-1">
+            <MessageSquare className="w-3.5 h-3.5" /> AI Chat
+          </Link>
           <Link href="https://runwayml.com" target="_blank" className="hover:text-white transition-colors flex items-center gap-1">
             Documentation <ArrowUpRight className="w-3 h-3" />
           </Link>
@@ -86,6 +89,12 @@ export default function HomePage() {
               <Button className="h-14 px-8 rounded-full bg-white text-black hover:bg-white/90 font-bold text-lg group">
                 Enter Dashboard
                 <ArrowRight className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" />
+              </Button>
+            </Link>
+            <Link href="/chat">
+              <Button variant="outline" className="h-14 px-8 rounded-full border-purple-500/30 bg-purple-500/10 hover:bg-purple-500/20 text-white font-bold text-lg group">
+                <MessageSquare className="w-5 h-5 mr-2" />
+                Try AI Chat
               </Button>
             </Link>
             <Link href="#features">
